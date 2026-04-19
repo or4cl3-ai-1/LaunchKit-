@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Kit": {
+      "title": "Kit",
+      "description": "A business project kit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "vibe": { "type": "string" },
+        "idea": { "$ref": "BusinessIdea" },
+        "deliverables": {
+          "type": "array",
+          "items": { "$ref": "Deliverable" }
+        },
+        "collaborators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "email": { "type": "string" },
+              "role": { "type": "string", "enum": ["owner", "editor", "viewer"] }
+            }
+          }
+        }
+      },
+      "required": ["id", "name", "ownerId", "updatedAt"]
+    },
+    "BusinessIdea": {
+      "title": "BusinessIdea",
+      "description": "Core business logic",
+      "type": "object",
+      "properties": {
+        "problem": { "type": "string" },
+        "solution": { "type": "string" },
+        "targetAudience": { "type": "string" },
+        "pricingStrategy": { "type": "string" },
+        "marketingChannels": { "type": "string" }
+      }
+    },
+    "Deliverable": {
+      "title": "Deliverable",
+      "description": "A generated business asset",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "generating", "completed", "failed"] },
+        "feedback": {
+          "type": "object",
+          "properties": {
+            "rating": { "type": "number" },
+            "comment": { "type": "string" }
+          }
+        }
+      }
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A real-time comment on a deliverable",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "deliverableId": { "type": "string" },
+        "kitId": { "type": "string" }
+      },
+      "required": ["id", "userId", "text", "createdAt", "deliverableId", "kitId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/kits/{kitId}": {
+      "schema": "Kit",
+      "description": "Business kits"
+    },
+    "/kits/{kitId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on deliverables within a kit"
+    }
+  }
+}

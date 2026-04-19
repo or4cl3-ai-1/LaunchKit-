@@ -1,0 +1,154 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string
+    //   - photoURL: string
+    //
+    // Collection: kits
+    // Document ID: {kitId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - ownerId: string (required)
+    //   - updatedAt: number (required)
+    //   - vibe: string
+    //   - idea: object (BusinessIdea)
+    //   - deliverables: array (Deliverable)
+    //   - collaborators: array (email: string, role: string)
+    //
+    // Collection: kits/{kitId}/comments
+    // Document ID: {commentId}
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required)
+    //   - userName: string
+    //   - userPhoto: string
+    //   - text: string (required)
+    //   - createdAt: number (required)
+    //   - deliverableId: string (required)
+    //   - kitId: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getKit(kitId) {
+      return get(/databases/$(database)/documents/kits/$(kitId)).data;
+    }
+
+    function canReadKit(kitId) {
+      let kit = get(/databases/$(database)/documents/kits/$(kitId)).data;
+      return kit != null && (
+        kit.isPublic == true ||
+        (isAuthenticated() && (
+          request.auth.uid == kit.ownerId || 
+          (request.auth.token.email != null && kit.keys().contains('collaborators') && kit.collaborators.hasAny([
+            {"email": request.auth.token.email, "role": "editor"}, 
+            {"email": request.auth.token.email, "role": "viewer"}
+          ]))
+        ))
+      );
+    }
+
+    function canEditKit(kitId) {
+      let kit = get(/databases/$(database)/documents/kits/$(kitId)).data;
+      return isAuthenticated() && kit != null && (
+        request.auth.uid == kit.ownerId || 
+        (request.auth.token.email != null && kit.keys().contains('collaborators') && kit.collaborators.hasAny([
+          {"email": request.auth.token.email, "role": "editor"}
+        ]))
+      );
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.email.size() < 255;
+    }
+
+    function isValidKit(data) {
+      return data.keys().hasAll(['id', 'name', 'ownerId', 'updatedAt']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.ownerId is string &&
+             data.updatedAt is number;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['id', 'userId', 'text', 'createdAt', 'deliverableId', 'kitId']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 1000 &&
+             data.createdAt is number &&
+             data.deliverableId is string &&
+             data.kitId is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /kits/{kitId} {
+      allow read: if (resource.data.isPublic == true) || (isAuthenticated() && (
+        request.auth.uid == resource.data.ownerId || 
+        (request.auth.token.email != null && 
+         resource.data.collaborators.hasAny([
+           {"email": request.auth.token.email, "role": "editor"}, 
+           {"email": request.auth.token.email, "role": "viewer"}
+         ]))
+      ));
+      
+      allow create: if isAuthenticated() && 
+                    isValidKit(request.resource.data) && 
+                    request.resource.data.ownerId == request.auth.uid;
+      
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == resource.data.ownerId && isValidKit(request.resource.data)) ||
+        (request.auth.token.email != null && resource.data.keys().contains('collaborators') && 
+         resource.data.collaborators.hasAny([{"email": request.auth.token.email, "role": "editor"}]) && 
+         isValidKit(request.resource.data) && 
+         request.resource.data.ownerId == resource.data.ownerId)
+      );
+      
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.ownerId;
+
+      match /comments/{commentId} {
+        allow read: if canReadKit(kitId);
+        allow create: if canReadKit(kitId) && 
+                      isValidComment(request.resource.data) && 
+                      request.resource.data.userId == request.auth.uid;
+        allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid && 
+                      isValidComment(request.resource.data);
+        allow delete: if isAuthenticated() && 
+                      (resource.data.userId == request.auth.uid || getKit(kitId).ownerId == request.auth.uid);
+      }
+    }
+  }
+}
